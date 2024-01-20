@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Markdown Embedder</title>
+    <script>
+      async function render(markdown) {
+        return (
+          await fetch("https://api.github.com/markdown", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ mode: "markdown", text: markdown }),
+          })
+        ).text();
+      }
+      const urlParams = new URLSearchParams(window.location.search);
+      const markdownUrl = urlParams.get("url");
+
+      if (!markdownUrl) {
+        document.body.innerHTML = "<h1>No url param found</h1>";
+      } else
+        fetch(markdownUrl)
+          .then((response) => response.text())
+          .then((data) => {
+            console.log(data);
+            render(data).then((rendered) => {
+              document.body.innerHTML = rendered;
+            });
+          });
+    </script>
+  </head>
+  <body></body>
+</html>
