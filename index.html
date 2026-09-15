@@ -1,36 +1,1526 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Markdown Embedder</title>
-    <script>
-      async function render(markdown) {
-        return (
-          await fetch("https://api.github.com/markdown", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ mode: "markdown", text: markdown }),
-          })
-        ).text();
-      }
-      const urlParams = new URLSearchParams(window.location.search);
-      const markdownUrl = urlParams.get("url");
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Markdown Embedder</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
 
-      if (!markdownUrl) {
-        document.body.innerHTML = "<h1>No url param found</h1>";
-      } else
-        fetch(markdownUrl)
-          .then((response) => response.text())
-          .then((data) => {
-            console.log(data);
-            render(data).then((rendered) => {
-              document.body.innerHTML = rendered;
-            });
+  <!-- Marked, Highlight.js, and DOMPurify for fast, secure client-side rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+  <link id="hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css" />
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+
+  <style>
+    :root {
+      --bg-warm: #fcfbf7;
+      --bg-topbar: #faf8f5;
+      --bg-sidebar: #f8f6f0;
+      --bg-content: #ffffff;
+      --border-color: #e8e4dc;
+      --border-dark: #d8d3c7;
+      --text-main: #272521;
+      --text-muted: #6b665d;
+      --text-sidebar: #4a463e;
+      --link-color: #1a60cc;
+      --accent: #1e66d5;
+      --accent-hover: #1551ad;
+      --code-bg: #f4f2eb;
+      --card-bg: #ffffff;
+      --sidebar-width: 270px;
+      --topbar-height: 44px;
+      --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-doc: -apple-system, BlinkMacSystemFont, "Segoe UI", "Georgia", Cambria, serif;
+      --font-mono: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg-warm: #121214;
+      --bg-topbar: #18181b;
+      --bg-sidebar: #161618;
+      --bg-content: #18181b;
+      --border-color: #27272a;
+      --border-dark: #3f3f46;
+      --text-main: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --text-sidebar: #d4d4d8;
+      --link-color: #60a5fa;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --code-bg: #27272a;
+      --card-bg: #1f1f23;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-ui);
+      background-color: var(--bg-warm);
+      color: var(--text-main);
+      overflow-x: hidden;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* TOPBAR */
+    #topbar {
+      height: var(--topbar-height);
+      background-color: var(--bg-topbar);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      user-select: none;
+    }
+
+    .topbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-icon {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-sidebar);
+      padding: 4px 7px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      line-height: 1;
+      transition: all 0.15s ease;
+      height: 28px;
+      min-width: 28px;
+    }
+
+    .btn-icon:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+      border-color: var(--border-color);
+      color: var(--text-main);
+    }
+
+    .btn-icon.active {
+      background-color: rgba(0, 0, 0, 0.08);
+      border-color: var(--border-dark);
+      color: var(--text-main);
+    }
+
+    .file-badge {
+      display: inline-flex;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-sidebar);
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid transparent;
+      max-width: 240px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-left: 4px;
+    }
+
+    /* Zoom Segmented Control */
+    .segmented-control {
+      display: inline-flex;
+      align-items: center;
+      background-color: rgba(0, 0, 0, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      height: 28px;
+      overflow: hidden;
+    }
+
+    .segmented-control button {
+      background: transparent;
+      border: none;
+      color: var(--text-sidebar);
+      padding: 0 8px;
+      height: 100%;
+      cursor: pointer;
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.12s;
+    }
+
+    .segmented-control button:hover {
+      background: rgba(0, 0, 0, 0.06);
+      color: var(--text-main);
+    }
+
+    .zoom-text {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-sidebar);
+      padding: 0 6px;
+      min-width: 44px;
+      text-align: center;
+      border-left: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
+      line-height: 26px;
+    }
+
+    .topbar-separator {
+      width: 1px;
+      height: 18px;
+      background-color: var(--border-color);
+      margin: 0 4px;
+    }
+
+    /* MAIN LAYOUT */
+    #main-container {
+      display: flex;
+      flex: 1;
+      min-height: calc(100vh - var(--topbar-height));
+      position: relative;
+    }
+
+    /* SIDEBAR */
+    #sidebar {
+      width: var(--sidebar-width);
+      min-width: var(--sidebar-width);
+      background-color: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+      overflow-y: auto;
+      height: calc(100vh - var(--topbar-height));
+      position: sticky;
+      top: var(--topbar-height);
+      padding: 16px 12px;
+      transition: margin-left 0.2s ease, transform 0.2s ease;
+      user-select: none;
+    }
+
+    #sidebar.hidden {
+      margin-left: calc(-1 * var(--sidebar-width));
+      pointer-events: none;
+    }
+
+    .sidebar-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      padding-left: 8px;
+    }
+
+    .toc-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .toc-item {
+      display: flex;
+      align-items: center;
+      font-size: 13px;
+      color: var(--text-sidebar);
+      text-decoration: none;
+      padding: 5px 8px;
+      border-radius: 5px;
+      line-height: 1.35;
+      transition: all 0.12s ease;
+      word-break: break-word;
+    }
+
+    .toc-item:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+      color: var(--text-main);
+    }
+
+    .toc-item.active {
+      background-color: rgba(30, 102, 213, 0.08);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .toc-item .toc-icon {
+      font-size: 13px;
+      margin-right: 7px;
+      flex-shrink: 0;
+      width: 16px;
+      text-align: center;
+      display: inline-block;
+    }
+
+    .toc-level-1 { font-weight: 600; }
+    .toc-level-2 { padding-left: 14px; }
+    .toc-level-3 { padding-left: 24px; font-size: 12.5px; opacity: 0.9; }
+    .toc-level-4 { padding-left: 34px; font-size: 12px; opacity: 0.8; }
+
+    /* CONTENT WRAPPER */
+    #content-container {
+      flex: 1;
+      padding: 36px 40px 80px;
+      display: flex;
+      justify-content: center;
+      overflow-x: auto;
+      background-color: var(--bg-content);
+      transition: background-color 0.2s ease;
+    }
+
+    #doc-wrapper {
+      width: 100%;
+      max-width: 860px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Georgia", Cambria, serif;
+      font-size: 15.5px;
+      line-height: 1.7;
+      color: var(--text-main);
+      transform-origin: top center;
+      transition: transform 0.1s ease, color 0.2s ease;
+    }
+
+    /* MARKDOWN TYPOGRAPHY */
+    #doc-wrapper h1,
+    #doc-wrapper h2,
+    #doc-wrapper h3,
+    #doc-wrapper h4,
+    #doc-wrapper h5,
+    #doc-wrapper h6 {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-main);
+      margin-top: 1.8em;
+      margin-bottom: 0.6em;
+      font-weight: 600;
+      line-height: 1.3;
+      scroll-margin-top: 60px;
+    }
+
+    #doc-wrapper h1:first-child {
+      font-family: "Georgia", "Cambria", "Times New Roman", serif;
+      text-align: center;
+      font-size: 2.1rem;
+      font-weight: 500;
+      margin-top: 0.4em;
+      margin-bottom: 0.8em;
+      border-bottom: none;
+      color: var(--text-main);
+    }
+
+    #doc-wrapper h1:first-child + p {
+      text-align: center;
+      font-size: 16px;
+      color: var(--text-muted);
+      max-width: 780px;
+      margin-left: auto;
+      margin-right: auto;
+      margin-bottom: 2em;
+    }
+
+    #doc-wrapper h1 { font-size: 1.85em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+    #doc-wrapper h2 { font-size: 1.45em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.25em; }
+    #doc-wrapper h3 { font-size: 1.2em; }
+    #doc-wrapper h4 { font-size: 1.05em; }
+
+    #doc-wrapper p {
+      margin-bottom: 1.15em;
+    }
+
+    #doc-wrapper a {
+      color: var(--link-color);
+      text-decoration: none;
+    }
+
+    #doc-wrapper a:hover {
+      text-decoration: underline;
+    }
+
+    #doc-wrapper ul,
+    #doc-wrapper ol {
+      margin-bottom: 1.15em;
+      padding-left: 1.9em;
+    }
+
+    #doc-wrapper li {
+      margin-bottom: 0.4em;
+    }
+
+    #doc-wrapper li::marker {
+      color: #4a463e;
+    }
+
+    #doc-wrapper blockquote {
+      border-left: 4px solid var(--border-dark);
+      padding: 8px 16px;
+      color: var(--text-muted);
+      margin: 1.2em 0;
+      background-color: var(--code-bg);
+      border-radius: 0 6px 6px 0;
+    }
+
+    #doc-wrapper hr {
+      border: none;
+      height: 1px;
+      background-color: var(--border-color);
+      margin: 2.2em 0;
+    }
+
+    #doc-wrapper table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5em 0;
+      font-size: 14px;
+      overflow-x: auto;
+      display: block;
+    }
+
+    #doc-wrapper th,
+    #doc-wrapper td {
+      border: 1px solid var(--border-color);
+      padding: 9px 14px;
+      text-align: left;
+    }
+
+    #doc-wrapper th {
+      background-color: var(--code-bg);
+      font-weight: 600;
+    }
+
+    #doc-wrapper img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      display: block;
+      margin: 1.4em auto;
+    }
+
+    /* CODE STYLES */
+    #doc-wrapper code:not(pre code) {
+      background-color: var(--code-bg);
+      color: var(--text-main);
+      padding: 0.2em 0.45em;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      border: 1px solid var(--border-color);
+    }
+
+    .code-block-wrapper {
+      position: relative;
+      margin: 1.2em 0;
+      background-color: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .code-copy-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-dark);
+      color: var(--text-muted);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 11px;
+      cursor: pointer;
+      opacity: 0;
+      transition: all 0.15s ease;
+      font-family: var(--font-ui);
+    }
+
+    .code-block-wrapper:hover .code-copy-btn {
+      opacity: 1;
+    }
+
+    .code-copy-btn:hover {
+      background: var(--bg-warm);
+      color: var(--text-main);
+    }
+
+    #doc-wrapper pre {
+      margin: 0;
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 13.5px;
+      line-height: 1.55;
+      background-color: transparent !important;
+    }
+
+    #doc-wrapper pre code {
+      background: transparent !important;
+      padding: 0;
+      font-family: inherit;
+    }
+
+    /* RAW / EDIT MODE */
+    #raw-wrapper {
+      display: none;
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    #raw-textarea {
+      width: 100%;
+      height: calc(100vh - 160px);
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.6;
+      background-color: var(--card-bg);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      resize: vertical;
+      outline: none;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    #raw-textarea:focus {
+      border-color: var(--accent);
+    }
+
+    /* LANDING PAGE (NO URL) */
+    #landing-page {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--bg-warm);
+      z-index: 50;
+      overflow-y: auto;
+      padding: 40px 20px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .landing-card {
+      width: 100%;
+      max-width: 660px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.03);
+      padding: 36px 32px;
+      margin: auto;
+    }
+
+    .landing-header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .landing-icon {
+      width: 54px;
+      height: 54px;
+      background: rgba(30, 102, 213, 0.08);
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      margin-bottom: 14px;
+    }
+
+    .landing-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 8px;
+      letter-spacing: -0.3px;
+    }
+
+    .landing-desc {
+      font-size: 14.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .section-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .url-input-box {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .url-input {
+      flex: 1;
+      height: 42px;
+      padding: 0 14px;
+      background-color: var(--card-bg);
+      color: var(--text-main);
+      border: 1px solid var(--border-dark);
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.15s;
+    }
+
+    .url-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(30, 102, 213, 0.15);
+    }
+
+    .btn-primary {
+      background-color: var(--accent);
+      color: #ffffff;
+      border: none;
+      padding: 0 18px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background-color 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--accent-hover);
+    }
+
+    .divider-text {
+      text-align: center;
+      position: relative;
+      margin: 20px 0;
+    }
+
+    .divider-text::before {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: var(--border-color);
+      z-index: 1;
+    }
+
+    .divider-text span {
+      position: relative;
+      background: var(--card-bg);
+      padding: 0 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      z-index: 2;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* DROPZONE */
+    .dropzone {
+      border: 2px dashed var(--border-dark);
+      border-radius: 8px;
+      padding: 26px 16px;
+      text-align: center;
+      background-color: rgba(255, 255, 255, 0.02);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      margin-bottom: 24px;
+    }
+
+    .dropzone:hover,
+    .dropzone.dragover {
+      border-color: var(--accent);
+      background-color: rgba(30, 102, 213, 0.05);
+    }
+
+    .dropzone-icon {
+      font-size: 26px;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .dropzone-text {
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text-main);
+      margin-bottom: 4px;
+    }
+
+    .dropzone-hint {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* SAMPLES */
+    .samples-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .sample-btn {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12.5px;
+      color: var(--text-sidebar);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sample-btn:hover {
+      background: var(--card-bg);
+      border-color: var(--border-dark);
+      color: var(--accent);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.04);
+    }
+
+    /* EMBED HINT BOX */
+    .embed-box {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .embed-box code {
+      display: block;
+      margin-top: 6px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--text-main);
+      word-break: break-all;
+      user-select: all;
+    }
+
+    /* LOADING & ERROR STATES */
+    #status-overlay {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 24px 32px;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      text-align: center;
+      z-index: 80;
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border-color);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 12px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* RESPONSIVE */
+    @media (max-width: 768px) {
+      #sidebar {
+        position: fixed;
+        left: 0;
+        z-index: 90;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+      }
+
+      #sidebar.hidden {
+        transform: translateX(-100%);
+        margin-left: 0;
+      }
+
+      #content-container {
+        padding: 24px 16px 60px;
+      }
+
+      .landing-card {
+        padding: 24px 18px;
+      }
+
+      .url-input-box {
+        flex-direction: column;
+      }
+
+      .btn-primary {
+        justify-content: center;
+        height: 40px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TOPBAR -->
+  <header id="topbar">
+    <!-- Left: Hamburger & File Name -->
+    <div class="topbar-group">
+      <button id="btn-toggle-sidebar" class="btn-icon" title="Toggle Table of Contents (Sidebar)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+      <div id="file-title" class="file-badge">README.md</div>
+    </div>
+
+    <!-- Center: Zoom & View Layout -->
+    <div class="topbar-group">
+      <div class="segmented-control" title="Zoom Controls">
+        <button id="btn-zoom-out" title="Zoom Out">−</button>
+        <span id="zoom-level" class="zoom-text">100%</span>
+        <button id="btn-zoom-in" title="Zoom In">+</button>
+      </div>
+
+      <div class="topbar-separator"></div>
+
+      <button id="btn-layout-toggle" class="btn-icon" title="Layout View">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="9" y1="3" x2="9" y2="21"></line>
+        </svg>
+      </button>
+
+      <button id="btn-toggle-source" class="btn-icon" title="Toggle Raw Markdown / Rendered View">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="16 18 22 12 16 6"></polyline>
+          <polyline points="8 6 2 12 8 18"></polyline>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Right: New/Open, Theme Toggle, Edit, Download -->
+    <div class="topbar-group">
+      <button id="btn-open-landing" class="btn-icon" title="Open or Upload Another File">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </button>
+
+      <button id="btn-toggle-theme" class="btn-icon" title="Toggle Dark / Light Theme">
+        <svg id="theme-icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+        <svg id="theme-icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      </button>
+
+      <button id="btn-edit-mode" class="btn-icon" title="Edit Markdown">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 20h9"></path>
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+        </svg>
+      </button>
+
+      <button id="btn-download" class="btn-icon" title="Download Markdown (.md)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <div id="main-container">
+    <!-- SIDEBAR OUTLINE / TOC -->
+    <aside id="sidebar">
+      <div id="sidebar-doc-title" class="sidebar-title">Outline</div>
+      <nav>
+        <ul id="toc-list" class="toc-list">
+          <!-- Dynamically populated TOC -->
+        </ul>
+      </nav>
+    </aside>
+
+    <!-- CONTENT -->
+    <main id="content-container">
+      <div id="doc-wrapper"></div>
+
+      <!-- Raw Markdown / Editor View -->
+      <div id="raw-wrapper">
+        <textarea id="raw-textarea" spellcheck="false" placeholder="Write or paste Markdown here..."></textarea>
+      </div>
+    </main>
+  </div>
+
+  <!-- LANDING PAGE (NO URL / OPEN) -->
+  <div id="landing-page">
+    <div class="landing-card">
+      <div class="landing-header">
+        <div class="landing-icon">📄</div>
+        <h1 class="landing-title">Markdown Embedder</h1>
+        <p class="landing-desc">
+          Clean, lightweight reader and embedder for any Markdown document.
+          Preview directly from GitHub, URL, or local file.
+        </p>
+      </div>
+
+      <!-- URL Input Form -->
+      <div class="section-label">Enter Markdown URL</div>
+      <form id="url-form" class="url-input-box" onsubmit="handleUrlSubmit(event)">
+        <input 
+          id="custom-url-input" 
+          type="text" 
+          class="url-input" 
+          placeholder="e.g. https://github.com/user/repo/blob/main/README.md" 
+          required 
+        />
+        <button type="submit" class="btn-primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+          View
+        </button>
+      </form>
+
+      <div class="divider-text"><span>OR</span></div>
+
+      <!-- Drag and Drop Zone -->
+      <div class="section-label">Upload or Drop File</div>
+      <div id="drop-zone" class="dropzone">
+        <input type="file" id="file-input" accept=".md,.markdown,.txt,text/markdown" style="display:none;" />
+        <span class="dropzone-icon">📁</span>
+        <div class="dropzone-text">Drop a Markdown file here, or browse</div>
+        <div class="dropzone-hint">Supports .md, .markdown, and text files (processed 100% locally)</div>
+      </div>
+
+      <!-- Quick Samples -->
+      <div class="section-label">Quick Samples</div>
+      <div class="samples-grid">
+        <button class="sample-btn" onclick="loadSample('self')">
+          <span>📌</span> This Repo README
+        </button>
+        <button class="sample-btn" onclick="loadSample('cheatsheet')">
+          <span>✨</span> Markdown Guide
+        </button>
+        <button class="sample-btn" onclick="loadSample('license')">
+          <span>⚖️</span> MIT License
+        </button>
+      </div>
+
+      <!-- Embed Hint -->
+      <div class="embed-box">
+        💡 <strong>Embed in any website:</strong>
+        <code id="embed-snippet">&lt;iframe src="https://andronasef.github.io/markdown-embedder/?url=YOUR_URL" width="100%" height="600" frameborder="0"&gt;&lt;/iframe&gt;</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS OVERLAY -->
+  <div id="status-overlay">
+    <div class="spinner"></div>
+    <div id="status-text">Loading document...</div>
+  </div>
+
+  <script>
+    // State
+    let currentMarkdown = "";
+    let currentFileName = "README.md";
+    let zoomLevel = 100;
+    let isRawMode = false;
+    let isEditMode = false;
+    const zoomSteps = [75, 85, 90, 100, 110, 125, 150, 175, 200];
+
+    // Elements
+    const topbar = document.getElementById("topbar");
+    const sidebar = document.getElementById("sidebar");
+    const docWrapper = document.getElementById("doc-wrapper");
+    const rawWrapper = document.getElementById("raw-wrapper");
+    const rawTextarea = document.getElementById("raw-textarea");
+    const landingPage = document.getElementById("landing-page");
+    const fileTitle = document.getElementById("file-title");
+    const sidebarDocTitle = document.getElementById("sidebar-doc-title");
+    const tocList = document.getElementById("toc-list");
+    const zoomLevelText = document.getElementById("zoom-level");
+    const statusOverlay = document.getElementById("status-overlay");
+    const statusText = document.getElementById("status-text");
+
+    // Initialize Marked
+    marked.setOptions({
+      gfm: true,
+      breaks: false,
+      highlight: function(code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          try {
+            return hljs.highlight(code, { language: lang }).value;
+          } catch (e) {}
+        }
+        try {
+          return hljs.highlightAuto(code).value;
+        } catch (e) {
+          return code;
+        }
+      }
+    });
+
+    // Helper: Normalize GitHub URLs (convert github.com/.../blob/... to raw.githubusercontent.com)
+    function normalizeMarkdownUrl(url) {
+      try {
+        const parsed = new URL(url.trim());
+        if (parsed.hostname === "github.com") {
+          // Check for /user/repo/blob/branch/path...
+          const parts = parsed.pathname.split("/").filter(Boolean);
+          if (parts.length >= 4 && parts[2] === "blob") {
+            const user = parts[0];
+            const repo = parts[1];
+            const branch = parts[3];
+            const path = parts.slice(4).join("/");
+            return `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${path}`;
+          }
+        }
+        return url.trim();
+      } catch (e) {
+        return url.trim();
+      }
+    }
+
+    // Helper: Extract filename from URL or path
+    function extractFileName(url) {
+      try {
+        const parsed = new URL(url);
+        const segments = parsed.pathname.split("/").filter(Boolean);
+        if (segments.length > 0) {
+          return decodeURIComponent(segments[segments.length - 1]);
+        }
+      } catch (e) {
+        const parts = url.split("/").filter(Boolean);
+        if (parts.length > 0) {
+          return parts[parts.length - 1];
+        }
+      }
+      return "Document.md";
+    }
+
+    // Determine icon for TOC items
+    function getTocIcon(text) {
+      // Check if text already starts with an emoji
+      const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation})/u;
+      const match = text.match(emojiRegex);
+      if (match) return ""; // already has emoji in title
+      
+      const lower = text.toLowerCase();
+      if (lower.includes("feature")) return "🌟";
+      if (lower.includes("quick") || lower.includes("start") || lower.includes("install")) return "🚀";
+      if (lower.includes("example") || lower.includes("usage")) return "📖";
+      if (lower.includes("how it works") || lower.includes("architecture")) return "🔧";
+      if (lower.includes("limit") || lower.includes("warning") || lower.includes("caution")) return "⚠️";
+      if (lower.includes("tech") || lower.includes("detail")) return "🛠️";
+      if (lower.includes("contribut")) return "🤝";
+      if (lower.includes("license")) return "📝";
+      if (lower.includes("case")) return "💡";
+      if (lower.includes("link")) return "🔗";
+      if (lower.includes("support") || lower.includes("contact")) return "📞";
+      if (lower.includes("faq") || lower.includes("question")) return "❓";
+      if (lower.includes("api") || lower.includes("endpoint")) return "🔌";
+      return "#";
+    }
+
+    // Show / Hide Status
+    function showStatus(msg) {
+      statusText.textContent = msg;
+      statusOverlay.style.display = "block";
+    }
+
+    function hideStatus() {
+      statusOverlay.style.display = "none";
+    }
+
+    // Render Markdown and generate TOC
+    function renderMarkdown(mdText, filename = "README.md") {
+      currentMarkdown = mdText;
+      currentFileName = filename;
+      fileTitle.textContent = filename;
+      sidebarDocTitle.textContent = filename.replace(/\.(md|markdown|txt)$/i, "");
+      rawTextarea.value = mdText;
+
+      // Parse markdown to HTML
+      const rawHtml = marked.parse(mdText);
+      const cleanHtml = DOMPurify.sanitize(rawHtml);
+      docWrapper.innerHTML = cleanHtml;
+
+      // Add copy buttons to code blocks
+      docWrapper.querySelectorAll("pre").forEach((pre) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "code-block-wrapper";
+        pre.parentNode.insertBefore(wrapper, pre);
+        wrapper.appendChild(pre);
+
+        const copyBtn = document.createElement("button");
+        copyBtn.className = "code-copy-btn";
+        copyBtn.textContent = "Copy";
+        copyBtn.addEventListener("click", () => {
+          const code = pre.querySelector("code") ? pre.querySelector("code").innerText : pre.innerText;
+          navigator.clipboard.writeText(code).then(() => {
+            copyBtn.textContent = "Copied!";
+            setTimeout(() => (copyBtn.textContent = "Copy"), 2000);
           });
-    </script>
-  </head>
-  <body></body>
+        });
+        wrapper.appendChild(copyBtn);
+      });
+
+      // Generate Table of Contents
+      generateToc();
+
+      // Ensure view is visible
+      landingPage.style.display = "none";
+      if (!isRawMode && !isEditMode) {
+        docWrapper.style.display = "block";
+        rawWrapper.style.display = "none";
+      }
+    }
+
+    // Parse leading emoji or infer section icon
+    function parseHeadingText(rawText, level) {
+      let text = rawText.trim();
+      let icon = "";
+      
+      // Match leading emoji
+      const emojiMatch = text.match(/^([\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F02F}\u{1F0A0}-\u{1F0FF}\u{1F100}-\u{1F64F}\u{1F680}-\u{1F6FF}]+)\s*/u);
+      if (emojiMatch) {
+        icon = emojiMatch[1];
+        text = text.substring(emojiMatch[0].length).trim();
+      } else if (level === 2) {
+        // Only infer icons for H2 sections if not already having an emoji
+        const lower = text.toLowerCase();
+        if (lower.includes("feature")) icon = "🌟";
+        else if (lower.includes("quick") || lower.includes("start") || lower.includes("install")) icon = "🚀";
+        else if (lower.includes("example") || lower.includes("usage")) icon = "📖";
+        else if (lower.includes("how it works") || lower.includes("architecture")) icon = "🔧";
+        else if (lower.includes("limit") || lower.includes("warning") || lower.includes("caution")) icon = "⚠️";
+        else if (lower.includes("tech") || lower.includes("detail")) icon = "🛠️";
+        else if (lower.includes("contribut")) icon = "🤝";
+        else if (lower.includes("license")) icon = "📝";
+        else if (lower.includes("case")) icon = "💡";
+        else if (lower.includes("link")) icon = "🔗";
+        else if (lower.includes("support") || lower.includes("contact")) icon = "📞";
+        else if (lower.includes("faq") || lower.includes("question")) icon = "❓";
+        else if (lower.includes("api") || lower.includes("endpoint")) icon = "🔌";
+      }
+
+      return { icon, text };
+    }
+
+    // Generate TOC
+    function generateToc() {
+      tocList.innerHTML = "";
+      
+      // Look for H1 to use as document title
+      const h1 = docWrapper.querySelector("h1");
+      if (h1) {
+        sidebarDocTitle.textContent = h1.textContent.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\s]+/u, "").trim();
+      }
+
+      // Collect headings to show in TOC (exclude H1 if it matches document title, show H2 and H3)
+      const allHeadings = Array.from(docWrapper.querySelectorAll("h1, h2, h3, h4"));
+      const headings = h1 && allHeadings.length > 1 
+        ? allHeadings.filter(h => h !== h1) 
+        : allHeadings;
+
+      if (headings.length === 0) {
+        const emptyLi = document.createElement("li");
+        emptyLi.style.fontSize = "12px";
+        emptyLi.style.color = "var(--text-muted)";
+        emptyLi.style.padding = "8px";
+        emptyLi.textContent = "No headings found";
+        tocList.appendChild(emptyLi);
+        return;
+      }
+
+      headings.forEach((heading, idx) => {
+        // Create slug ID if none exists
+        if (!heading.id) {
+          const slug = heading.textContent
+            .toLowerCase()
+            .replace(/[^\w\s-]/g, "")
+            .trim()
+            .replace(/\s+/g, "-");
+          heading.id = slug || `section-${idx + 1}`;
+        }
+
+        const level = parseInt(heading.tagName.substring(1));
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.className = `toc-item toc-level-${level}`;
+        a.href = `#${heading.id}`;
+
+        const { icon, text } = parseHeadingText(heading.textContent, level);
+
+        if (icon) {
+          const iconSpan = document.createElement("span");
+          iconSpan.className = "toc-icon";
+          iconSpan.textContent = icon;
+          a.appendChild(iconSpan);
+        } else if (level === 2) {
+          const iconSpan = document.createElement("span");
+          iconSpan.className = "toc-icon";
+          iconSpan.textContent = "•";
+          iconSpan.style.opacity = "0.4";
+          a.appendChild(iconSpan);
+        }
+
+        const titleSpan = document.createElement("span");
+        titleSpan.textContent = text;
+        a.appendChild(titleSpan);
+
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          heading.scrollIntoView({ behavior: "smooth" });
+          history.replaceState(null, null, `#${heading.id}`);
+          highlightActiveToc(heading.id);
+        });
+
+        li.appendChild(a);
+        tocList.appendChild(li);
+      });
+    }
+
+    function highlightActiveToc(activeId) {
+      document.querySelectorAll(".toc-item").forEach((item) => {
+        if (item.getAttribute("href") === `#${activeId}`) {
+          item.classList.add("active");
+        } else {
+          item.classList.remove("active");
+        }
+      });
+    }
+
+    // IntersectionObserver for active TOC highlight on scroll
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            highlightActiveToc(entry.target.id);
+          }
+        });
+      },
+      { rootMargin: "0px 0px -70% 0px", threshold: 0 }
+    );
+
+    function observeHeadings() {
+      docWrapper.querySelectorAll("h1, h2, h3, h4").forEach((h) => observer.observe(h));
+    }
+
+    // Load from URL
+    async function loadFromUrl(url) {
+      showStatus("Fetching markdown...");
+      const targetUrl = normalizeMarkdownUrl(url);
+      const filename = extractFileName(targetUrl);
+
+      try {
+        const res = await fetch(targetUrl);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        const text = await res.text();
+        renderMarkdown(text, filename);
+        observeHeadings();
+      } catch (err) {
+        console.warn("Direct fetch failed, attempting via proxy or raw github API...", err);
+        // If CORS or fetch error on GitHub, try raw.githubusercontent if applicable
+        try {
+          const fallbackRes = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(targetUrl));
+          if (!fallbackRes.ok) throw new Error("CORS Proxy also failed");
+          const text = await fallbackRes.text();
+          renderMarkdown(text, filename);
+          observeHeadings();
+        } catch (e2) {
+          alert(`Failed to load markdown: ${err.message}. Ensure the URL allows CORS or is publicly accessible.`);
+          showLandingPage();
+        }
+      } finally {
+        hideStatus();
+      }
+    }
+
+    // Handle URL submission from landing page
+    function handleUrlSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById("custom-url-input");
+      const url = input.value.trim();
+      if (!url) return;
+
+      const currentParams = new URLSearchParams(window.location.search);
+      currentParams.set("url", url);
+      const newUrl = `${window.location.pathname}?${currentParams.toString()}`;
+      window.history.pushState({ url }, "", newUrl);
+
+      loadFromUrl(url);
+    }
+
+    // Show landing page
+    function showLandingPage() {
+      landingPage.style.display = "flex";
+      fileTitle.textContent = "Markdown Embedder";
+      sidebarDocTitle.textContent = "Outline";
+      tocList.innerHTML = '<li style="font-size:12px;color:var(--text-muted);padding:8px;">Load a file to view outline</li>';
+    }
+
+    // Samples
+    function loadSample(type) {
+      if (type === "self") {
+        const selfUrl = "https://raw.githubusercontent.com/andronasef/markdown-embedder/master/README.md";
+        window.history.pushState({ url: selfUrl }, "", `?url=${encodeURIComponent(selfUrl)}`);
+        loadFromUrl(selfUrl);
+      } else if (type === "cheatsheet") {
+        const guideUrl = "https://raw.githubusercontent.com/adam-p/markdown-here/master/src/common/markdown-here-cheatsheet.md";
+        window.history.pushState({ url: guideUrl }, "", `?url=${encodeURIComponent(guideUrl)}`);
+        loadFromUrl(guideUrl);
+      } else if (type === "license") {
+        const licenseUrl = "https://raw.githubusercontent.com/andronasef/markdown-embedder/master/LICENSE";
+        window.history.pushState({ url: licenseUrl }, "", `?url=${encodeURIComponent(licenseUrl)}`);
+        loadFromUrl(licenseUrl);
+      }
+    }
+
+    // File Drag and Drop / Local Upload
+    const dropZone = document.getElementById("drop-zone");
+    const fileInput = document.getElementById("file-input");
+
+    dropZone.addEventListener("click", () => fileInput.click());
+
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.classList.add("dragover");
+    });
+
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.classList.remove("dragover");
+    });
+
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("dragover");
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handleLocalFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    fileInput.addEventListener("change", (e) => {
+      if (e.target.files && e.target.files[0]) {
+        handleLocalFile(e.target.files[0]);
+      }
+    });
+
+    function handleLocalFile(file) {
+      showStatus("Reading file...");
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        renderMarkdown(event.target.result, file.name);
+        observeHeadings();
+        hideStatus();
+      };
+      reader.onerror = () => {
+        alert("Failed to read local file.");
+        hideStatus();
+      };
+      reader.readAsText(file);
+    }
+
+    // Zoom buttons
+    function updateZoom(newZoom) {
+      zoomLevel = Math.max(50, Math.min(250, newZoom));
+      zoomLevelText.textContent = `${zoomLevel}%`;
+      docWrapper.style.fontSize = `${(16 * zoomLevel) / 100}px`;
+    }
+
+    document.getElementById("btn-zoom-in").addEventListener("click", () => {
+      const next = zoomSteps.find((s) => s > zoomLevel) || zoomLevel + 25;
+      updateZoom(next);
+    });
+
+    document.getElementById("btn-zoom-out").addEventListener("click", () => {
+      const prev = [...zoomSteps].reverse().find((s) => s < zoomLevel) || zoomLevel - 25;
+      updateZoom(prev);
+    });
+
+    // Toggle Sidebar
+    const btnToggleSidebar = document.getElementById("btn-toggle-sidebar");
+    const btnLayoutToggle = document.getElementById("btn-layout-toggle");
+
+    function toggleSidebar() {
+      sidebar.classList.toggle("hidden");
+      const isHidden = sidebar.classList.contains("hidden");
+      btnToggleSidebar.classList.toggle("active", !isHidden);
+      btnLayoutToggle.classList.toggle("active", !isHidden);
+    }
+
+    btnToggleSidebar.addEventListener("click", toggleSidebar);
+    btnLayoutToggle.addEventListener("click", toggleSidebar);
+
+    // Toggle Raw / Source Mode
+    const btnToggleSource = document.getElementById("btn-toggle-source");
+    btnToggleSource.addEventListener("click", () => {
+      isRawMode = !isRawMode;
+      btnToggleSource.classList.toggle("active", isRawMode);
+      if (isRawMode) {
+        docWrapper.style.display = "none";
+        rawWrapper.style.display = "block";
+        rawTextarea.readOnly = true;
+      } else {
+        docWrapper.style.display = "block";
+        rawWrapper.style.display = "none";
+      }
+    });
+
+    // Edit Mode (Pencil)
+    const btnEdit = document.getElementById("btn-edit-mode");
+    btnEdit.addEventListener("click", () => {
+      isEditMode = !isEditMode;
+      btnEdit.classList.toggle("active", isEditMode);
+      if (isEditMode) {
+        docWrapper.style.display = "none";
+        rawWrapper.style.display = "block";
+        rawTextarea.readOnly = false;
+        rawTextarea.focus();
+      } else {
+        // Re-render edited markdown
+        renderMarkdown(rawTextarea.value, currentFileName);
+        observeHeadings();
+      }
+    });
+
+    // Real-time update while editing
+    rawTextarea.addEventListener("input", () => {
+      if (isEditMode) {
+        currentMarkdown = rawTextarea.value;
+      }
+    });
+
+    // Download Button
+    document.getElementById("btn-download").addEventListener("click", () => {
+      if (!currentMarkdown) {
+        alert("No markdown content to download!");
+        return;
+      }
+      const blob = new Blob([currentMarkdown], { type: "text/markdown;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = currentFileName || "document.md";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    });
+
+    // Open / New Landing
+    document.getElementById("btn-open-landing").addEventListener("click", () => {
+      showLandingPage();
+    });
+
+    // Theme Management (Dark / Light Mode)
+    const btnToggleTheme = document.getElementById("btn-toggle-theme");
+    const themeIconMoon = document.getElementById("theme-icon-moon");
+    const themeIconSun = document.getElementById("theme-icon-sun");
+    const hljsThemeLink = document.getElementById("hljs-theme");
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      localStorage.setItem("theme", theme);
+      if (theme === "dark") {
+        themeIconMoon.style.display = "none";
+        themeIconSun.style.display = "inline-block";
+        if (hljsThemeLink) {
+          hljsThemeLink.href = "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css";
+        }
+      } else {
+        themeIconMoon.style.display = "inline-block";
+        themeIconSun.style.display = "none";
+        if (hljsThemeLink) {
+          hljsThemeLink.href = "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css";
+        }
+      }
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute("data-theme") || "light";
+      setTheme(current === "dark" ? "light" : "dark");
+    }
+
+    btnToggleTheme.addEventListener("click", toggleTheme);
+
+    // Initial theme setup
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme) {
+      setTheme(savedTheme);
+    } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      setTheme("dark");
+    } else {
+      setTheme("light");
+    }
+
+    // Check query params on initial load
+    window.addEventListener("DOMContentLoaded", () => {
+      const params = new URLSearchParams(window.location.search);
+      const url = params.get("url");
+
+      if (url) {
+        loadFromUrl(url);
+      } else {
+        showLandingPage();
+      }
+    });
+
+    // Handle browser back/forward buttons
+    window.addEventListener("popstate", (e) => {
+      const params = new URLSearchParams(window.location.search);
+      const url = params.get("url");
+      if (url) {
+        loadFromUrl(url);
+      } else {
+        showLandingPage();
+      }
+    });
+  </script>
+</body>
 </html>
+
